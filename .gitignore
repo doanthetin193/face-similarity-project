@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+venv/
+.venv/
+
+# Dataset (ảnh nặng, tự chuẩn bị — không push)
+custom_dataset/
+images/
+
+# Embeddings & kết quả (generate được từ code)
+embeddings/*.npy
+results/*.png
+results/*.jpg
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+notebooks/.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
