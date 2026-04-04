@@ -1,7 +1,7 @@
 # 🧠 Kế Hoạch Dự Án AI: Face Similarity Retrieval System
 
 > **Môn học:** Lập trình Trí tuệ Nhân tạo  
-> **Nhóm:** 2 người  
+> **Nhóm:** 3 người  
 > **Mục tiêu học thuật:** Xây dựng hệ thống truy hồi khuôn mặt tương đồng dựa trên Representation Learning  
 > **Mục tiêu dài hạn:** Nền tảng nghiên cứu để phát triển thành ứng dụng hẹn hò (Dating App)
 
@@ -116,7 +116,7 @@ face_similarity_project/
 ├── src/
 │   ├── utils.py               # Tiện ích chung (path, save/load)
 │   ├── 01_preprocess.py       # Load LFW, chuẩn hóa ảnh
-│   ├── 02_embed.py            # MTCNN + FaceNet → embeddings (LFW)
+│   ├── 02_embed.py            # FaceNet only (LFW đã crop sẵn, bypass MTCNN) → embeddings
 │   ├── 02b_embed_custom.py    # MTCNN + FaceNet → embeddings (custom)
 │   ├── 03_retrieval.py        # Cosine similarity, Top-K, ROC Curve + AUC
 │   ├── 04_cluster.py          # KMeans, Elbow method, Silhouette
@@ -177,7 +177,7 @@ face_similarity_project/
 | **Top-K Retrieval** | Nhập 1 ảnh → 5 ảnh giống nhất | Cosine similarity |
 | **Clustering** | Phân nhóm tự động | Silhouette Score |
 | **PCA / t-SNE** | Scatter plot 2D trực quan | Cấu trúc space rõ |
-| **Webcam demo** | Real-time, ~15 FPS | Demo trực tiếp khi bảo vệ |
+| **Webcam demo** | Hiển thị ~30 FPS; AI chạy mỗi 4 frame (FRAME_SKIP=4) | Demo trực tiếp khi bảo vệ |
 | **Web UI** | 4 tab đầy đủ | Streamlit localhost:8501 |
 
 ---
@@ -213,13 +213,15 @@ python query_external.py "anh.jpg" --topk 5  # Query ảnh bất kỳ
 
 ---
 
-## 9. Phân Công Nhóm (Gợi Ý)
+## 9. Phân Công Nhóm
 
-| Thành viên | Phần việc |
-|---|---|
-| Thành viên 1 | Bước 1+2: Preprocessing + Embedding extraction |
-| Thành viên 2 | Bước 3+4+5: Retrieval + Clustering + Visualization |
-| **Cả nhóm** | Web UI + Webcam + ROC + README + Báo cáo |
+| Thành viên | Script phụ trách | Nội dung |
+|---|---|---|
+| **Nhóm trưởng** | `02_embed.py`, `02b_embed_custom.py`, `03_retrieval.py` | AI Core: MTCNN + FaceNet embedding, cosine Top-K retrieval, ROC/AUC/EER — phần kỹ thuật cốt lõi nhất |
+| **Thành viên 2** | `04_cluster.py`, `05_visualize.py`, `webcam_query.py` | Analysis + Demo: KMeans clustering, PCA/t-SNE, webcam realtime — phần phân tích và demo trực quan |
+| **Thành viên 3** | `01_preprocess.py`, `run_pipeline.py`, `query_external.py`, `app.py` | Ops + App: thống kê dataset, chạy pipeline, CLI query, Streamlit Web UI — phần vận hành và giao diện |
+
+**Phần cả nhóm cùng nắm:** Kiến trúc pipeline tổng thể, ý nghĩa AUC=0.988, cách đọc kết quả demo.
 
 ---
 

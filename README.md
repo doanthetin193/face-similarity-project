@@ -118,8 +118,9 @@ python query_external.py "anh.jpg" --topk 8
 ## Kiến trúc Pipeline
 
 ```
-Ảnh (LFW hoặc custom_dataset/)
-    ↓ MTCNN — detect & crop face (160×160)
+custom_dataset/ (ảnh thô)      LFW (đã crop sẵn)
+    ↓ MTCNN detect & crop          ↓ Resize 160×160
+    └──────────────────────────────┘
     ↓ InceptionResnetV1 (FaceNet pretrained VGGFace2)
     → Embedding 512-dim  →  lưu embeddings.npy
          ├─ Cosine Similarity → Top-K Retrieval (nội bộ)
@@ -138,6 +139,7 @@ python query_external.py "anh.jpg" --topk 8
 | `results/01_class_distribution.png` | Biểu đồ phân phối số ảnh |
 | `results/03_retrieval_query*.png` | Kết quả Top-K retrieval nội bộ |
 | `results/03_similarity_distribution.png` | Phân phối cosine similarity |
+| `results/03_roc_curve.png` | **ROC Curve + AUC + EER** |
 | `results/04_elbow_silhouette.png` | Elbow Method + Silhouette |
 | `results/04_cluster_samples_k*.png` | Ảnh mẫu mỗi cụm KMeans |
 | `results/05_pca_*.png` | PCA 2D scatter |
@@ -173,9 +175,13 @@ face_similarity_project/
 │   ├── 03_retrieval.py        # Top-K similarity search nội bộ
 │   ├── 04_cluster.py          # KMeans clustering
 │   └── 05_visualize.py        # PCA + t-SNE + heatmap
-├── query_external.py          # Query ảnh từ ngoài vào dataset
+├── app.py                     # Streamlit Web UI (4 tab)
+├── webcam_query.py            # Webcam real-time query
+├── query_external.py          # Query ảnh từ ngoài vào dataset (CLI)
 ├── run_pipeline.py            # Chạy toàn bộ pipeline LFW 1 lệnh
+├── docs/                      # Tài liệu kỹ thuật chi tiết
 ├── custom_dataset/            # Dataset tự chuẩn bị (không push lên git)
+├── images/                    # Ảnh test cho query_external
 ├── embeddings/                # embeddings.npy, labels.npy (auto-generated)
 ├── results/                   # Hình ảnh kết quả (auto-generated)
 ├── requirements.txt

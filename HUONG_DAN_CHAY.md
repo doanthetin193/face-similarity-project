@@ -75,9 +75,9 @@ python src/02b_embed_custom.py
 
 Khi chạy xong, terminal sẽ hiện:
 ```
-[OK] Hoan tat embedding!
-     Anh da embed : 31,480
-     Anh bo qua  : 182  (khong detect duoc mat)
+[✓] Hoàn tất embedding!
+    Ảnh đã embed : 31,480   ← con số tuỳ thuộc vào dataset bạn có
+    Ảnh bỏ qua  : 182   (không detect được mặt)
 ```
 
 ✅ File `embeddings/embeddings.npy`, `labels.npy`, `images.npy` đã được tạo.  

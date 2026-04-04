@@ -595,7 +595,7 @@ embeddings = np.load('embeddings/embeddings.npy')  # (31480, 512)
 inertias = []
 sil_scores = []
 for k in range(3, 16):
-    km = KMeans(n_clusters=k, random_state=42)
+    km = KMeans(n_clusters=k, random_state=42, n_init="auto")
     labels = km.fit_predict(embeddings)
     inertias.append(km.inertia_)
     sil = silhouette_score(embeddings, labels, sample_size=1000)
@@ -605,7 +605,7 @@ for k in range(3, 16):
 best_k = np.argmax(sil_scores) + 3  # +3 vì range bắt đầu từ 3
 
 # Clustering cuối cùng
-km_final = KMeans(n_clusters=best_k, random_state=42)
+km_final = KMeans(n_clusters=best_k, random_state=42, n_init="auto")
 cluster_labels = km_final.fit_predict(embeddings)
 
 # Phân tích cụm
@@ -619,12 +619,14 @@ for c in range(best_k):
     print(f"  Top-3: {top3}")
 ```
 
-**Kết quả ví dụ (k=15):**
+**Kết quả ví dụ (k=15) — chạy trên LFW dataset (người Tây):**
 ```
 Cluster 0 [178 ảnh]: Silva(48), Agassi(36), Abbas(28)
 Cluster 1 [237 ảnh]: Powell(236), Zemin(1)
 Cluster 12 [561 ảnh]: Bush(530), Bremer(16), Daschle(15)
 ```
+
+> Khi chạy trên custom dataset người Việt, tên người sẽ là "ca sĩ Bảo Anh", "diễn viên Kim Thần"... 
 
 → Nhiều cluster "thuần" (dominated bởi 1 người) → model phân biệt tốt
 
@@ -739,7 +741,9 @@ from sklearn.manifold import TSNE
 pca_50 = PCA(n_components=50).fit_transform(embeddings)
 
 # t-SNE 50D → 2D
-tsne = TSNE(n_components=2, perplexity=30, max_iter=1000, random_state=42)
+# sklearn < 1.5 dùng n_iter; sklearn ≥ 1.5 dùng max_iter
+# (code thực tế trong 05_visualize.py có kiểm tra version tự động)
+tsne = TSNE(n_components=2, perplexity=30, n_iter=1000, random_state=42)
 embeddings_2d = tsne.fit_transform(pca_50)  # Mất ~1-2 phút
 
 # Plot

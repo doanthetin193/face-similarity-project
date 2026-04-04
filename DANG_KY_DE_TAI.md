@@ -14,7 +14,7 @@
 
 | | |
 |---|---|
-| **Số thành viên** | 2 người |
+| **Số thành viên** | 3 người |
 | **Môn học** | Lập trình Trí tuệ Nhân tạo |
 
 ---
@@ -46,7 +46,7 @@ Hệ thống được đánh giá bằng **đường cong ROC** và chỉ số *
 Xây dựng ứng dụng web với 4 tab chức năng: upload ảnh và xem kết quả ngay trên trình duyệt, thống kê dataset, xem toàn bộ biểu đồ phân tích, và khám phá phân cụm — không cần cài đặt, chạy trực tiếp trên `localhost`.
 
 ### 📷 Nhận diện Webcam thời gian thực
-Demo trực tiếp qua camera máy tính: hệ thống phát hiện khuôn mặt, xử lý và hiển thị Top-3 người giống nhất (kèm ảnh thumbnail) **theo thời gian thực ở ~30 FPS trên CPU**.
+Demo trực tiếp qua camera máy tính: hệ thống phát hiện khuôn mặt, xử lý và hiển thị Top-3 người giống nhất (kèm ảnh thumbnail) **theo thời gian thực**. Màn hình hiển thị ~30 FPS; AI phân tích mỗi 4 frame một lần (FRAME_SKIP=4) để tối ưu hiệu năng CPU.
 
 ### 🔬 Trực quan hóa không gian đặc trưng
 Dùng **PCA** và **t-SNE** để chiếu không gian embedding 512 chiều xuống 2D, cho thấy cấu trúc tự nhiên của dữ liệu khuôn mặt — một cách thể hiện trực quan rằng AI đã "học" được cách phân biệt người này với người khác.
