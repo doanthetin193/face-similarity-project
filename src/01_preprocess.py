@@ -18,7 +18,7 @@ from sklearn.datasets import fetch_lfw_people
 
 # Thêm thư mục src vào path để import utils
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from utils import RESULTS_DIR, save_figure
+from utils import save_figure
 
 # ──────────────────────────────────────────────────────
 # Tham số

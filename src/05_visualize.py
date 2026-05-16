@@ -17,11 +17,9 @@ import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 from sklearn.metrics.pairwise import cosine_similarity
-from sklearn.preprocessing import LabelEncoder
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from utils import load_embeddings, save_figure, EMBED_DIR
@@ -77,7 +75,6 @@ def plot_scatter(reduced_2d: np.ndarray,
                  labels: np.ndarray,
                  title: str,
                  save_name: str,
-                 cluster_labels: np.ndarray = None,
                  n_classes: int = N_DISPLAY_CLASSES):
     """
     Scatter plot 2D — màu theo từng người (hoặc cụm).
@@ -88,9 +85,6 @@ def plot_scatter(reduced_2d: np.ndarray,
     top_people = unique[np.argsort(counts)[::-1][:n_classes]]
     mask = np.isin(labels, top_people)
 
-    # Encode label sang integer để tô màu
-    le = LabelEncoder()
-    le.fit(top_people)
     colors = plt.cm.tab20(np.linspace(0, 1, len(top_people)))
 
     fig, ax = plt.subplots(figsize=(12, 9))
@@ -221,8 +215,16 @@ if __name__ == "__main__":
     cluster_path = os.path.join(EMBED_DIR, "cluster_labels.npy")
     cluster_labels = None
     if os.path.exists(cluster_path):
-        cluster_labels = np.load(cluster_path)
-        print(f"[✓] Đã load cluster labels — {len(np.unique(cluster_labels))} cụm")
+        loaded_clusters = np.load(cluster_path)
+        if len(loaded_clusters) == len(embeddings):
+            cluster_labels = loaded_clusters
+            print(f"[✓] Đã load cluster labels — {len(np.unique(cluster_labels))} cụm")
+        else:
+            print(
+                "[!] Bỏ qua cluster_labels.npy vì không khớp embeddings "
+                f"({len(loaded_clusters)} labels vs {len(embeddings)} embeddings). "
+                "Hãy chạy lại: python src/04_cluster.py"
+            )
 
     # 1. PCA variance
     print("\n[1] PCA Explained Variance …")

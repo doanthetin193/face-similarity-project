@@ -27,7 +27,7 @@ ROOT   = os.path.dirname(os.path.abspath(__file__))
 SRC    = os.path.join(ROOT, "src")
 sys.path.insert(0, SRC)
 
-from utils import load_embeddings, RESULTS_DIR, EMBED_DIR
+from utils import load_embeddings, RESULTS_DIR, EMBED_DIR, align_and_crop_face
 
 # ─────────────────────────────────────────────────────────────
 # Page config
@@ -109,8 +109,8 @@ def get_models():
 
 
 def embed_uploaded(pil_img, mtcnn, resnet, device):
-    """Upload anh -> MTCNN detect -> FaceNet embed -> (512,)"""
-    tensor = mtcnn(pil_img)
+    """Upload anh -> detect/align/crop -> FaceNet embed -> (512,)"""
+    tensor = align_and_crop_face(pil_img, mtcnn)
     if tensor is None:
         return None
     with torch.no_grad():
@@ -463,27 +463,34 @@ with tab4:
         cluster_labels = np.load(cluster_labels_path, allow_pickle=True)
         true_labels    = np.load(labels_path, allow_pickle=True)
 
-        st.markdown("#### Thống kê cụm")
-        unique_clusters = np.unique(cluster_labels)
-        k_actual = len(unique_clusters)
+        cluster_ok = len(cluster_labels) == len(true_labels)
+        if not cluster_ok:
+            st.warning(
+                "cluster_labels.npy không khớp với labels.npy. "
+                "Hãy chạy lại `python src/04_cluster.py` sau khi embed custom dataset."
+            )
+        else:
+            st.markdown("#### Thống kê cụm")
+            unique_clusters = np.unique(cluster_labels)
+            k_actual = len(unique_clusters)
 
-        c1, c2 = st.columns(2)
-        c1.metric("Số cụm K", k_actual)
-        c2.metric("Tổng ảnh", len(cluster_labels))
+            c1, c2 = st.columns(2)
+            c1.metric("Số cụm K", k_actual)
+            c2.metric("Tổng ảnh", len(cluster_labels))
 
-        # Phan phoi kich thuoc cum
-        sizes = [np.sum(cluster_labels == c) for c in unique_clusters]
-        fig, ax = plt.subplots(figsize=(8, 2.5))
-        fig.patch.set_facecolor("#1a1f2e")
-        ax.set_facecolor("#1a1f2e")
-        colors = plt.cm.plasma(np.linspace(0.2, 0.85, k_actual))
-        ax.bar(unique_clusters, sizes, color=colors)
-        ax.set_xlabel("Cluster ID", color="#8b92a5")
-        ax.set_ylabel("Số ảnh", color="#8b92a5")
-        ax.set_title("Phân phối kích thước cụm", color="white")
-        ax.tick_params(colors="#8b92a5")
-        for spine in ax.spines.values():
-            spine.set_edgecolor("#2a2d3e")
-        plt.tight_layout()
-        st.pyplot(fig, use_container_width=True)
-        plt.close(fig)
+            # Phan phoi kich thuoc cum
+            sizes = [np.sum(cluster_labels == c) for c in unique_clusters]
+            fig, ax = plt.subplots(figsize=(8, 2.5))
+            fig.patch.set_facecolor("#1a1f2e")
+            ax.set_facecolor("#1a1f2e")
+            colors = plt.cm.plasma(np.linspace(0.2, 0.85, k_actual))
+            ax.bar(unique_clusters, sizes, color=colors)
+            ax.set_xlabel("Cluster ID", color="#8b92a5")
+            ax.set_ylabel("Số ảnh", color="#8b92a5")
+            ax.set_title("Phân phối kích thước cụm", color="white")
+            ax.tick_params(colors="#8b92a5")
+            for spine in ax.spines.values():
+                spine.set_edgecolor("#2a2d3e")
+            plt.tight_layout()
+            st.pyplot(fig, use_container_width=True)
+            plt.close(fig)

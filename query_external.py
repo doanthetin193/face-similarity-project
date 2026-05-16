@@ -1,5 +1,5 @@
 """
-query_external.py — Nhận ảnh từ bên ngoài, tìm Top-K khuôn mặt giống nhất trong LFW
+query_external.py — Nhận ảnh từ bên ngoài, tìm Top-K khuôn mặt giống nhất trong dataset đã embed
 
 Cách dùng:
     python query_external.py "đường_dẫn_ảnh.jpg"
@@ -27,9 +27,8 @@ from PIL import Image
 from sklearn.metrics.pairwise import cosine_similarity
 from facenet_pytorch import MTCNN, InceptionResnetV1
 
-# Thêm src vào path để dùng utils
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "src"))
-from utils import load_embeddings, save_figure, RESULTS_DIR
+# Import utils từ thư mục src
+from src.utils import load_embeddings, save_figure, RESULTS_DIR, align_and_crop_face
 
 # ──────────────────────────────────────────────────────
 # Config
@@ -62,14 +61,12 @@ def embed_external_image(image_path: str, mtcnn: MTCNN,
     """
     img = Image.open(image_path).convert("RGB")
 
-    # MTCNN detect + crop + normalize → tensor (3, 160, 160) range [-1, 1]
-    face_tensor = mtcnn(img)
+    # Detect, align và crop → tensor (3, 160, 160) range [-1, 1]
+    face_tensor = align_and_crop_face(img, mtcnn)
 
     if face_tensor is None:
         return None, None
 
-    # Lấy ảnh crop để hiển thị (không normalize)
-    face_crop = mtcnn.forward(img, return_prob=False)  # vẫn là tensor
     # Chuyển tensor [-1,1] → PIL để hiển thị
     face_display = face_tensor.permute(1, 2, 0).numpy()
     face_display = (face_display + 1) / 2.0  # [-1,1] → [0,1]
@@ -108,7 +105,7 @@ def plot_result(face_pil: Image.Image,
                 k: int):
     """Vẽ ảnh query + Top-K kết quả, lưu vào results/."""
     fig, axes = plt.subplots(1, k + 1, figsize=(3 * (k + 1), 4))
-    fig.suptitle("External Query — Top-K Similar Faces in LFW", fontsize=13)
+    fig.suptitle("External Query — Top-K Similar Faces in Dataset", fontsize=13)
 
     # Query image
     axes[0].imshow(face_pil)
@@ -142,7 +139,7 @@ def plot_result(face_pil: Image.Image,
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Tìm Top-K khuôn mặt trong LFW giống nhất với ảnh của bạn"
+        description="Tìm Top-K khuôn mặt trong dataset đã embed giống nhất với ảnh của bạn"
     )
     parser.add_argument("image", help="Đường dẫn tới ảnh đầu vào (jpg/png/...)")
     parser.add_argument("--topk", type=int, default=5,
@@ -165,7 +162,7 @@ def main():
     print(f"[*] Device      : {DEVICE.upper()}\n")
 
     # 1. Load embeddings dataset
-    print("[*] Load embeddings LFW …")
+    print("[*] Load embeddings dataset …")
     embeddings, labels, dataset_images = load_embeddings(with_images=True)
 
     # 2. Load models
@@ -189,7 +186,7 @@ def main():
           f"range=[{query_emb.min():.3f}, {query_emb.max():.3f}]")
 
     # 4. Tìm Top-K
-    print(f"\n[*] Tìm Top-{k} khuôn mặt giống nhất trong {len(embeddings):,} ảnh LFW …")
+    print(f"\n[*] Tìm Top-{k} khuôn mặt giống nhất trong {len(embeddings):,} ảnh dataset …")
     top_indices, top_scores, top_labels = find_top_k(query_emb, embeddings, labels, k)
 
     # 5. In kết quả
@@ -211,7 +208,7 @@ def main():
     elif top1_score > 0.6:
         verdict = "Tương đồng vừa — một số đặc trưng khuôn mặt gần nhau"
     else:
-        verdict = "Ít tương đồng — khuôn mặt khá độc đáo so với LFW dataset"
+        verdict = "Ít tương đồng — khuôn mặt khá độc đáo so với dataset hiện tại"
     print(f"\n  → {verdict}")
 
     # 6. Lưu ảnh kết quả & mở lên xem

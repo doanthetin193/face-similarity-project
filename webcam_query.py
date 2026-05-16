@@ -28,8 +28,7 @@ from PIL import Image, ImageDraw, ImageFont
 from facenet_pytorch import MTCNN, InceptionResnetV1
 from sklearn.metrics.pairwise import cosine_similarity
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "src"))
-from utils import load_embeddings, RESULTS_DIR
+from src.utils import load_embeddings, RESULTS_DIR, align_and_crop_face
 
 # ─────────────────────────────────────────────────────
 # Config
@@ -205,7 +204,7 @@ def embed_frame(pil_img, mtcnn, resnet):
       2. FaceNet trich embedding 512D
     Returns: (box, prob, embedding) hoac (None, None, None) neu khong detect duoc
     """
-    boxes, probs = mtcnn.detect(pil_img)
+    boxes, probs, landmarks = mtcnn.detect(pil_img, landmarks=True)
 
     if boxes is None or probs[0] is None or probs[0] < CONF_THRESH:
         return None, None, None
@@ -214,9 +213,10 @@ def embed_frame(pil_img, mtcnn, resnet):
     best_idx = int(np.argmax(probs))
     box  = boxes[best_idx].astype(int)
     prob = probs[best_idx]
+    points = landmarks[best_idx]
 
-    # Lay tensor da crop (MTCNN forward)
-    tensor = mtcnn(pil_img)   # (3, 160, 160) hoac None
+    # Lay tensor da align va crop
+    tensor = align_and_crop_face(pil_img, mtcnn, points)   # (3, 160, 160) hoac None
     if tensor is None:
         return None, None, None
 

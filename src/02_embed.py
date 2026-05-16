@@ -19,7 +19,7 @@ import numpy as np
 import torch
 from PIL import Image
 from tqdm import tqdm
-from facenet_pytorch import MTCNN, InceptionResnetV1
+from facenet_pytorch import InceptionResnetV1
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from utils import save_embeddings

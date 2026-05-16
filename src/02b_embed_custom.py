@@ -30,8 +30,9 @@ import torch
 from PIL import Image
 from tqdm import tqdm
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from utils import save_embeddings
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT_DIR)
+from src.utils import save_embeddings, align_and_crop_face
 
 from facenet_pytorch import MTCNN, InceptionResnetV1
 
@@ -158,7 +159,7 @@ def embed_dataset(samples, mtcnn, resnet, device, batch_size=BATCH_SIZE):
 
         for pil, lbl in zip(valid_pils, valid_labels):
             try:
-                tensor = mtcnn(pil)
+                tensor = align_and_crop_face(pil, mtcnn)
             except Exception:
                 tensor = None
             if tensor is None:
@@ -180,6 +181,11 @@ def embed_dataset(samples, mtcnn, resnet, device, batch_size=BATCH_SIZE):
         all_embeddings.append(embs)
         all_labels.extend(labels_ok)
         all_images.extend(imgs_ok)
+
+    if not all_embeddings:
+        raise RuntimeError(
+            "Không embed được ảnh nào. Hãy kiểm tra custom_dataset/ và chất lượng ảnh."
+        )
 
     embeddings = np.vstack(all_embeddings)        # (N, 512)
     labels_arr = np.array(all_labels)
