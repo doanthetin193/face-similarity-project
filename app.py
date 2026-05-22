@@ -12,6 +12,7 @@ except AttributeError:
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 import os
+import subprocess
 import numpy as np
 import torch
 import matplotlib
@@ -69,7 +70,17 @@ st.markdown("""
 }
 .sim-high   { background: #1a3a2a; color: #4ade80; border: 1px solid #22c55e; }
 .sim-medium { background: #1a2a3a; color: #60a5fa; border: 1px solid #3b82f6; }
+.sim-uncertain { background: #2a2414; color: #fbbf24; border: 1px solid #f59e0b; }
 .sim-low    { background: #2a2a1a; color: #facc15; border: 1px solid #eab308; }
+.explain-box {
+    background: #151a26; border: 1px solid #2a2d3e; border-radius: 10px;
+    padding: 14px 16px; margin: 8px 0 14px 0; color: #d6d9e6;
+}
+.explain-box b { color: #ffffff; }
+.step-box {
+    background: #151a26; border-left: 3px solid #667eea; border-radius: 8px;
+    padding: 12px 14px; margin-bottom: 10px; color: #d6d9e6;
+}
 
 /* Metric box */
 .metric-box {
@@ -108,14 +119,31 @@ def get_models():
     return mtcnn, resnet, device
 
 
+def tensor_to_display_image(tensor):
+    """Chuyen tensor khuon mat cua MTCNN ve anh uint8 de hien thi."""
+    arr = tensor.detach().cpu().permute(1, 2, 0).numpy()
+    arr = np.clip(arr * 128.0 + 127.5, 0, 255).astype(np.uint8)
+    return arr
+
+
 def embed_uploaded(pil_img, mtcnn, resnet, device):
-    """Upload anh -> detect/align/crop -> FaceNet embed -> (512,)"""
-    tensor = align_and_crop_face(pil_img, mtcnn)
+    """Upload anh -> detect/align/crop -> FaceNet embed -> metadata hien thi."""
+    boxes, probs, landmarks = mtcnn.detect(pil_img, landmarks=True)
+    if boxes is None or len(boxes) == 0:
+        return None, None, 0, None
+
+    valid_probs = np.array([p if p is not None else -1 for p in probs])
+    best_idx = int(np.argmax(valid_probs))
+    best_prob = float(valid_probs[best_idx])
+    if best_prob < 0:
+        return None, None, len(boxes), None
+
+    tensor = align_and_crop_face(pil_img, mtcnn, landmarks[best_idx])
     if tensor is None:
-        return None
+        return None, None, len(boxes), best_prob
     with torch.no_grad():
         emb = resnet(tensor.unsqueeze(0).to(device))
-    return emb.cpu().numpy()[0]
+    return emb.cpu().numpy()[0], tensor, len(boxes), best_prob
 
 
 def find_top_k(query_emb, db_embs, db_labels, db_imgs, k):
@@ -124,15 +152,45 @@ def find_top_k(query_emb, db_embs, db_labels, db_imgs, k):
     return db_labels[top_idx], scores[top_idx], db_imgs[top_idx], top_idx
 
 
+EER_THRESHOLD = 0.4968
+
+
 def sim_color_class(score):
-    if score >= 0.65:  return "sim-high",   "Match"
-    if score >= 0.50:  return "sim-medium", "Similar"
-    return "sim-low", "Low"
+    if score >= 0.75:
+        return "sim-high", "Rất giống"
+    if score >= 0.60:
+        return "sim-medium", "Khá giống"
+    if score >= EER_THRESHOLD:
+        return "sim-uncertain", "Có tương đồng"
+    return "sim-low", "Không chắc chắn"
+
+
+def sim_explanation(score):
+    css_cls, label = sim_color_class(score)
+    if score >= 0.75:
+        detail = "Mức tương đồng cao, có thể xem là ứng viên rất mạnh trong Top-K."
+    elif score >= 0.60:
+        detail = "Mức tương đồng khá tốt, nên đối chiếu thêm ảnh gốc khi báo cáo/demo."
+    elif score >= EER_THRESHOLD:
+        detail = "Điểm vượt ngưỡng EER nhưng chưa cao, hệ thống xem là có dấu hiệu tương đồng."
+    else:
+        detail = "Điểm thấp hơn ngưỡng EER, kết quả chỉ nên dùng để tham khảo."
+    return css_cls, label, detail
 
 
 def result_image_path(name):
     p = os.path.join(RESULTS_DIR, name)
     return p if os.path.exists(p) else None
+
+
+def launch_webcam(top_k=3, camera=0):
+    """Mo webcam_query.py tu Streamlit bang mot process rieng."""
+    script_path = os.path.join(ROOT, "webcam_query.py")
+    cmd = [sys.executable, script_path, "--topk", str(top_k), "--camera", str(camera)]
+    kwargs = {"cwd": ROOT}
+    if os.name == "nt":
+        kwargs["creationflags"] = subprocess.CREATE_NEW_CONSOLE
+    return subprocess.Popen(cmd, **kwargs)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -145,14 +203,26 @@ with st.sidebar:
     # Trang thai dataset
     embed_ok = os.path.exists(os.path.join(EMBED_DIR, "embeddings.npy"))
     if embed_ok:
-        st.success("✅ Embeddings san sang")
+        st.success("✅ Embeddings sẵn sàng")
     else:
-        st.error("❌ Chua co embeddings.npy")
-        st.info("Chay:\n```\npython src/02b_embed_custom.py\n```")
+        st.error("❌ Chưa có embeddings.npy")
+        st.info("Chạy:\n```\npython src/02b_embed_custom.py\n```")
 
     st.markdown("---")
-    st.markdown("**Phim tat Webcam**")
-    st.markdown("`Q/ESC` Thoat  \n`S` Chup anh  \n`SPACE` Tam dung")
+    st.markdown("**Mở Webcam từ web**")
+    webcam_top_k = st.slider("Top-K webcam", 1, 10, 3)
+    webcam_camera = st.number_input("Camera index", min_value=0, max_value=5, value=0, step=1)
+    if st.button("Mở webcam", disabled=not embed_ok, use_container_width=True):
+        try:
+            launch_webcam(webcam_top_k, webcam_camera)
+            st.success("Đã mở webcam. Xem cửa sổ OpenCV trên máy.")
+        except Exception as exc:
+            st.error(f"Không mở được webcam: {exc}")
+    st.caption("Chức năng này chạy local và mở cửa sổ OpenCV riêng, không nhúng trực tiếp vào trang web.")
+
+    st.markdown("---")
+    st.markdown("**Phím tắt Webcam**")
+    st.markdown("`Q/ESC` Thoát  \n`S` Chụp ảnh  \n`SPACE` Tạm dừng")
     st.markdown("---")
     st.markdown(
         "<div style='color:#555;font-size:0.75rem'>"
@@ -171,11 +241,12 @@ st.markdown('<p class="sub-title">FaceNet (VGGFace2) · Cosine Similarity · KMe
 # ─────────────────────────────────────────────────────────────
 # Tabs
 # ─────────────────────────────────────────────────────────────
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "🔍  Query Upload",
     "📊  Dataset Info",
     "📈  Kết quả & Biểu đồ",
     "🗂️  Clustering",
+    "Pipeline & Giải thích",
 ])
 
 
@@ -206,16 +277,60 @@ with tab1:
                 db_embs, db_labels, db_imgs = get_embeddings()
                 mtcnn, resnet, device = get_models()
                 pil_img = Image.open(uploaded).convert("RGB")
-                query_emb = embed_uploaded(pil_img, mtcnn, resnet, device)
+                query_emb, aligned_tensor, face_count, face_prob = embed_uploaded(
+                    pil_img, mtcnn, resnet, device
+                )
 
             if query_emb is None:
                 st.error("❌ Không phát hiện được khuôn mặt trong ảnh!")
-                st.info("💡 Gợi ý: Ảnh cần có khuôn mặt rõ ràng, nhìn thẳng, đủ sáng.")
+                st.info(
+                    "💡 Gợi ý: hãy dùng ảnh có khuôn mặt rõ ràng, đủ sáng, không bị che quá nhiều "
+                    "và khuôn mặt nên chiếm một phần đáng kể trong ảnh."
+                )
             else:
-                st.success("✅ Đã detect khuôn mặt thành công!")
+                if face_count > 1:
+                    st.warning(
+                        f"Ảnh có {face_count} khuôn mặt. Hệ thống chọn khuôn mặt có xác suất phát hiện cao nhất "
+                        f"để crop-align và truy vấn."
+                    )
+                else:
+                    st.success("✅ Đã phát hiện 1 khuôn mặt và xử lý thành công!")
+
+                preview_cols = st.columns([1, 2])
+                with preview_cols[0]:
+                    st.image(
+                        tensor_to_display_image(aligned_tensor),
+                        caption="Ảnh sau crop-align đưa vào FaceNet",
+                        use_container_width=True
+                    )
+                with preview_cols[1]:
+                    prob_text = f"{face_prob:.3f}" if face_prob is not None else "không xác định"
+                    st.markdown(
+                        f"<div class='explain-box'>"
+                        f"<b>Kiểm tra tiền xử lý ảnh truy vấn</b><br>"
+                        f"Số khuôn mặt phát hiện được: <b>{face_count}</b><br>"
+                        f"Xác suất phát hiện của khuôn mặt được chọn: <b>{prob_text}</b><br>"
+                        f"Ảnh bên trái là khuôn mặt sau khi MTCNN phát hiện landmark, căn chỉnh/crop và resize về 160x160. "
+                        f"Đây chính là ảnh được đưa vào FaceNet để sinh embedding 512 chiều."
+                        f"</div>",
+                        unsafe_allow_html=True
+                    )
 
                 top_labels, top_scores, top_imgs, top_idx = find_top_k(
                     query_emb, db_embs, db_labels, db_imgs, top_k
+                )
+
+                best_css, best_label, best_detail = sim_explanation(top_scores[0])
+                st.markdown(
+                    f"<div class='explain-box'>"
+                    f"<b>Kết quả gần nhất:</b> {top_labels[0]} "
+                    f"<span class='sim-badge {best_css}'>{top_scores[0]:.3f} · {best_label}</span><br>"
+                    f"<b>Ngưỡng tham chiếu EER:</b> {EER_THRESHOLD:.4f}. "
+                    f"{best_detail}<br>"
+                    f"<span style='color:#8b92a5'>Cosine similarity càng cao thì vector embedding của hai khuôn mặt càng gần nhau, "
+                    f"vì vậy mức tương đồng càng lớn.</span>"
+                    f"</div>",
+                    unsafe_allow_html=True
                 )
 
                 st.markdown(f"#### Top-{top_k} kết quả")
@@ -248,8 +363,10 @@ with tab1:
                 fig, ax = plt.subplots(figsize=(8, 2.5))
                 fig.patch.set_facecolor("#1a1f2e")
                 ax.set_facecolor("#1a1f2e")
-                colors = ["#4ade80" if s >= 0.65 else "#60a5fa" if s >= 0.50 else "#facc15"
-                          for s in top_scores]
+                colors = [
+                    "#4ade80" if s >= 0.75 else "#60a5fa" if s >= 0.60 else "#fbbf24" if s >= EER_THRESHOLD else "#facc15"
+                    for s in top_scores
+                ]
                 short_labels = [l[:18] + ".." if len(l) > 18 else l for l in top_labels]
                 bars = ax.barh(range(len(top_scores)), top_scores, color=colors, height=0.5)
                 ax.set_yticks(range(len(top_scores)))
@@ -258,8 +375,9 @@ with tab1:
                 ax.set_xlim(0, 1)
                 ax.set_xlabel("Cosine Similarity", color="#8b92a5")
                 ax.tick_params(colors="#8b92a5")
-                ax.axvline(0.65, color="#4ade80", lw=1, ls="--", alpha=0.5, label="Match ≥0.65")
-                ax.axvline(0.50, color="#60a5fa", lw=1, ls="--", alpha=0.5, label="Similar ≥0.50")
+                ax.axvline(0.75, color="#4ade80", lw=1, ls="--", alpha=0.5, label="Rất giống >=0.75")
+                ax.axvline(0.60, color="#60a5fa", lw=1, ls="--", alpha=0.5, label="Khá giống >=0.60")
+                ax.axvline(EER_THRESHOLD, color="#fbbf24", lw=1, ls="--", alpha=0.5, label=f"EER {EER_THRESHOLD:.4f}")
                 for spine in ax.spines.values():
                     spine.set_edgecolor("#2a2d3e")
                 ax.legend(fontsize=7, labelcolor="white", facecolor="#1a1f2e",
@@ -326,6 +444,7 @@ with tab2:
             plt.tight_layout()
             st.pyplot(fig, use_container_width=True)
             plt.close(fig)
+
 
         with col_top:
             st.markdown("**Top 15 người nhiều ảnh nhất**")
@@ -494,3 +613,256 @@ with tab4:
             plt.tight_layout()
             st.pyplot(fig, use_container_width=True)
             plt.close(fig)
+
+# =====================================================================
+# TAB 5 - Pipeline & Explanation
+# =====================================================================
+with tab5:
+    st.subheader("Báo cáo thuyết trình: Face Similarity Retrieval")
+    st.markdown(
+        "Nội dung dưới đây được thiết kế như một bản thuyết trình trực tiếp trên web: "
+        "đi từ bài toán, kiến thức nền tảng, phương pháp xử lý, kỹ thuật áp dụng, kết quả thực nghiệm "
+        "đến các ứng dụng thực tế của hệ thống."
+    )
+
+    c1, c2, c3, c4 = st.columns(4)
+    summary_metrics = [
+        ("31,480", "Ảnh đã embed"),
+        ("512D", "Kích thước embedding"),
+        ("0.9914", "AUC"),
+        ("0.0518", "EER"),
+    ]
+    for col, (val, lbl) in zip([c1, c2, c3, c4], summary_metrics):
+        col.markdown(
+            f"<div class='metric-box'>"
+            f"<div class='metric-val'>{val}</div>"
+            f"<div class='metric-lbl'>{lbl}</div>"
+            f"</div>",
+            unsafe_allow_html=True
+        )
+
+    st.markdown("---")
+
+    st.markdown("#### 1. Bài toán hệ thống giải quyết")
+    st.markdown(
+        "<div class='explain-box'>"
+        "<b>Mục tiêu của đề tài</b> là xây dựng hệ thống tìm kiếm khuôn mặt tương đồng. "
+        "Khi người dùng đưa vào một ảnh bất kỳ có khuôn mặt, hệ thống sẽ phát hiện khuôn mặt, "
+        "căn chỉnh ảnh, trích xuất đặc trưng bằng mô hình học sâu, sau đó so sánh với cơ sở dữ liệu "
+        "đã được nhúng sẵn để trả về Top-K khuôn mặt giống nhất. "
+        "<br><br>"
+        "Bài toán này thuộc nhóm <b>Face Similarity Retrieval</b>: hệ thống không nhất thiết phải kết luận "
+        "người trong ảnh là ai, mà tập trung tìm những khuôn mặt có đặc trưng gần nhất với ảnh truy vấn. "
+        "Điểm quan trọng là hệ thống so sánh trên đặc trưng khuôn mặt đã học được, không so sánh trực tiếp "
+        "từng pixel của ảnh."
+        "</div>",
+        unsafe_allow_html=True
+    )
+
+    st.markdown("#### 2. Kiến thức nền tảng và thuật ngữ")
+    concept_cols = st.columns(2)
+    concepts = [
+        (
+            "Embedding là gì?",
+            "Embedding là vector số biểu diễn đặc trưng của một đối tượng. Trong đề tài này, mỗi khuôn mặt "
+            "được chuyển thành một vector 512 chiều. Hai khuôn mặt càng giống nhau thì hai vector embedding "
+            "càng gần nhau trong không gian đặc trưng."
+        ),
+        (
+            "FaceNet / InceptionResnetV1 là gì?",
+            "FaceNet là hướng tiếp cận dùng mạng học sâu để biến ảnh khuôn mặt thành embedding. "
+            "Project sử dụng InceptionResnetV1 pretrained trên VGGFace2, tức là mô hình đã được học trước "
+            "trên tập khuôn mặt lớn và được dùng để trích xuất đặc trưng thay vì huấn luyện lại từ đầu."
+        ),
+        (
+            "MTCNN là gì?",
+            "MTCNN là mô hình phát hiện khuôn mặt nhiều tầng. Nó tìm vị trí khuôn mặt và landmark như mắt, "
+            "mũi, miệng. Landmark giúp hệ thống xoay và căn chỉnh mặt trước khi đưa vào FaceNet."
+        ),
+        (
+            "Cosine similarity là gì?",
+            "Cosine similarity đo độ giống nhau về hướng giữa hai vector. Với embedding khuôn mặt, điểm càng cao "
+            "thì hai khuôn mặt càng có đặc trưng gần nhau. Vì vậy hệ thống dùng cosine similarity để xếp hạng Top-K."
+        ),
+        (
+            "Top-K Retrieval là gì?",
+            "Top-K retrieval là quá trình lấy ra K kết quả có điểm tương đồng cao nhất. Ví dụ Top-5 nghĩa là "
+            "hệ thống trả về 5 khuôn mặt gần nhất với ảnh truy vấn."
+        ),
+        (
+            "AUC, EER, threshold là gì?",
+            "AUC đo khả năng phân biệt cặp cùng người và khác người trên nhiều ngưỡng. EER là điểm mà tỷ lệ nhận sai "
+            "và bỏ sót cân bằng nhau. Threshold là ngưỡng quyết định một điểm similarity có đủ cao để xem là tương đồng hay không."
+        ),
+    ]
+    for idx, (title, desc) in enumerate(concepts):
+        with concept_cols[idx % 2]:
+            st.markdown(
+                f"<div class='step-box'><b>{title}</b><br>{desc}</div>",
+                unsafe_allow_html=True
+            )
+
+    st.markdown("#### 3. Luồng xử lý chính của hệ thống")
+    steps = [
+        (
+            "Bước 1. Chuẩn bị dữ liệu",
+            "Ảnh khuôn mặt được tổ chức theo từng người trong dataset. Mỗi thư mục hoặc nhãn đại diện cho một danh tính. "
+            "Dữ liệu được ưu tiên theo bối cảnh người Việt để phù hợp hơn với mục tiêu thực tế của đề tài."
+        ),
+        (
+            "Bước 2. Phát hiện khuôn mặt bằng MTCNN",
+            "Mỗi ảnh được đưa qua MTCNN để tìm bounding box khuôn mặt và các điểm landmark. Nếu ảnh không có khuôn mặt rõ ràng, "
+            "hệ thống bỏ qua ảnh đó để tránh tạo embedding sai."
+        ),
+        (
+            "Bước 3. Căn chỉnh và crop khuôn mặt",
+            "Dựa vào landmark hai mắt, hệ thống xoay ảnh về tư thế chuẩn hơn rồi crop khuôn mặt về kích thước phù hợp. "
+            "Bước này rất quan trọng vì FaceNet hoạt động ổn định hơn khi khuôn mặt đã được chuẩn hóa góc nhìn."
+        ),
+        (
+            "Bước 4. Trích xuất embedding bằng FaceNet",
+            "Ảnh khuôn mặt đã căn chỉnh được đưa vào InceptionResnetV1 để sinh ra vector embedding 512 chiều. "
+            "Vector này nén thông tin nhận dạng quan trọng của khuôn mặt thành dạng số."
+        ),
+        (
+            "Bước 5. Lưu embedding để truy vấn nhanh",
+            "Thay vì mỗi lần truy vấn lại xử lý toàn bộ dataset, hệ thống lưu sẵn embeddings, labels và ảnh đã crop. "
+            "Khi có ảnh mới, chỉ cần embed ảnh truy vấn rồi so sánh với ma trận embedding đã lưu."
+        ),
+        (
+            "Bước 6. So sánh cosine similarity",
+            "Embedding của ảnh truy vấn được so sánh với mọi embedding trong dataset. Hệ thống sắp xếp điểm similarity giảm dần "
+            "và lấy ra Top-K khuôn mặt giống nhất."
+        ),
+        (
+            "Bước 7. Đánh giá và trực quan hóa",
+            "Project đánh giá bằng ROC/AUC, EER, precision, recall, F1; đồng thời dùng PCA và t-SNE để trực quan hóa phân bố embedding. "
+            "KMeans được dùng để thử phân cụm không giám sát trên không gian đặc trưng."
+        ),
+    ]
+    for title, desc in steps:
+        st.markdown(
+            f"<div class='step-box'><b>{title}</b><br>{desc}</div>",
+            unsafe_allow_html=True
+        )
+
+    st.markdown("#### 4. Cách đọc điểm similarity trong demo")
+    st.markdown(
+        f"<div class='explain-box'>"
+        f"<b>Cosine similarity</b> nằm trong khoảng so sánh độ gần giữa hai vector embedding. "
+        f"Trong demo này, hệ thống dùng ngưỡng tham chiếu EER = <b>{EER_THRESHOLD:.4f}</b>. "
+        f"Các mức diễn giải trên giao diện gồm: <b>rất giống</b> khi >= 0.75, "
+        f"<b>khá giống</b> khi >= 0.60, <b>có tương đồng</b> khi vượt ngưỡng EER, "
+        f"và <b>không chắc chắn</b> khi thấp hơn ngưỡng EER."
+        f"</div>",
+        unsafe_allow_html=True
+    )
+
+    st.markdown("#### 5. Kết quả thực nghiệm và ý nghĩa")
+    result_cols = st.columns(2)
+    with result_cols[0]:
+        st.markdown(
+            "<div class='step-box'>"
+            "<b>AUC = 0.9914</b><br>"
+            "AUC cao cho thấy hệ thống có khả năng phân biệt tốt giữa cặp ảnh cùng người và khác người. "
+            "Điều này chứng minh embedding sinh ra bởi FaceNet mang nhiều thông tin nhận dạng hữu ích."
+            "</div>",
+            unsafe_allow_html=True
+        )
+        st.markdown(
+            "<div class='step-box'>"
+            "<b>EER = 0.0518</b><br>"
+            "EER càng thấp thì điểm cân bằng giữa nhận sai và bỏ sót càng tốt. Với EER khoảng 5.18%, "
+            "hệ thống có chất lượng tương đối ổn cho một bài toán retrieval/demonstration trên dataset thực tế."
+            "</div>",
+            unsafe_allow_html=True
+        )
+    with result_cols[1]:
+        st.markdown(
+            "<div class='step-box'>"
+            "<b>Threshold EER = 0.4968</b><br>"
+            "Ngưỡng này được dùng làm mốc tham chiếu khi diễn giải kết quả. Tuy nhiên trong demo người dùng vẫn nên xem Top-K "
+            "và ảnh trực quan, vì ảnh thật có thể bị ảnh hưởng bởi ánh sáng, góc mặt, biểu cảm, tóc, kính hoặc chất lượng camera."
+            "</div>",
+            unsafe_allow_html=True
+        )
+        st.markdown(
+            "<div class='step-box'>"
+            "<b>PCA, t-SNE, KMeans</b><br>"
+            "Các kỹ thuật này không phải bước nhận dạng chính, mà dùng để phân tích không gian embedding: "
+            "các ảnh cùng người có xu hướng gần nhau hơn, còn các nhóm khác nhau sẽ phân tách tương đối trong không gian đặc trưng."
+            "</div>",
+            unsafe_allow_html=True
+        )
+
+    st.markdown("#### 6. Ứng dụng thực tế của tìm kiếm khuôn mặt tương đồng")
+    applications = [
+        (
+            "Ứng dụng hẹn hò và gợi ý gu thẩm mỹ",
+            "Người dùng có thể cung cấp một ảnh mẫu thể hiện gu khuôn mặt họ yêu thích. Hệ thống tìm các hồ sơ có đặc trưng khuôn mặt tương đồng, "
+            "kết hợp thêm sở thích, vị trí, độ tuổi và hành vi tương tác để gợi ý người phù hợp hơn. Trong sản phẩm thật cần xử lý quyền riêng tư, "
+            "đồng ý của người dùng và tránh dùng khuôn mặt như tiêu chí duy nhất."
+        ),
+        (
+            "Tìm kiếm ảnh trong thư viện cá nhân",
+            "Người dùng tải một ảnh chân dung lên và hệ thống tìm các ảnh có khuôn mặt tương tự trong album lớn. Ứng dụng phù hợp cho quản lý ảnh gia đình, "
+            "ảnh sự kiện, ảnh lớp, ảnh công ty hoặc kho media nội bộ."
+        ),
+        (
+            "Hỗ trợ quản lý sự kiện và điểm danh",
+            "Trong hội nghị, lớp học hoặc sự kiện đông người, hệ thống có thể hỗ trợ tìm các ảnh check-in hoặc ảnh camera có khuôn mặt gần giống ảnh đăng ký. "
+            "Vai trò phù hợp nhất là hỗ trợ gợi ý để con người xác nhận, không nên thay thế hoàn toàn quyết định cuối."
+        ),
+        (
+            "Tìm kiếm nhân vật trong video hoặc kho ảnh báo chí",
+            "Tòa soạn, đội truyền thông hoặc đơn vị sản xuất video có thể dùng retrieval để tìm nhanh các khung hình chứa khuôn mặt tương đồng với ảnh mẫu, "
+            "giảm thời gian dò thủ công trong kho dữ liệu lớn."
+        ),
+        (
+            "Gợi ý ảnh đại diện hoặc lọc ảnh trùng gần giống",
+            "Các nền tảng mạng xã hội có thể phát hiện nhiều ảnh chân dung gần giống nhau, gợi ý ảnh rõ mặt nhất hoặc gom nhóm ảnh theo cùng một người."
+        ),
+        (
+            "Hỗ trợ an ninh ở mức truy vấn nội bộ",
+            "Trong môi trường được cấp phép như doanh nghiệp hoặc khuôn viên riêng, hệ thống có thể tìm nhanh các ảnh tương đồng từ camera hoặc ảnh đăng ký. "
+            "Ứng dụng này cần quy trình pháp lý, bảo mật dữ liệu và kiểm soát sai số rất chặt chẽ."
+        ),
+        (
+            "Tìm người trong dữ liệu thất lạc hoặc dữ liệu nhân đạo",
+            "Trong các bài toán tìm kiếm ảnh người thân, ảnh hồ sơ hoặc dữ liệu cần đối chiếu, hệ thống có thể trả về danh sách ứng viên gần giống để chuyên viên kiểm tra."
+        ),
+        (
+            "Kiểm tra trùng lặp hồ sơ",
+            "Các hệ thống đăng ký thành viên, thẻ ra vào hoặc hồ sơ nội bộ có thể dùng face similarity để phát hiện một người tạo nhiều hồ sơ bằng ảnh khác nhau."
+        ),
+    ]
+    for title, desc in applications:
+        st.markdown(
+            f"<div class='step-box'><b>{title}</b><br>{desc}</div>",
+            unsafe_allow_html=True
+        )
+
+    st.markdown("#### 7. Điểm mạnh, giới hạn và hướng phát triển")
+    st.markdown(
+        "<div class='explain-box'>"
+        "<b>Điểm mạnh:</b> pipeline rõ ràng, dùng mô hình pretrained mạnh, có bước căn chỉnh khuôn mặt, "
+        "có đánh giá định lượng và có demo trực quan bằng Streamlit/webcam. "
+        "<br><br>"
+        "<b>Giới hạn:</b> chất lượng phụ thuộc vào dữ liệu, ánh sáng, góc chụp, độ phân giải ảnh và độ đa dạng của khuôn mặt trong dataset. "
+        "Hệ thống hiện tập trung vào tìm kiếm tương đồng, chưa phải hệ thống định danh tuyệt đối trong môi trường sản xuất. "
+        "<br><br>"
+        "<b>Hướng phát triển:</b> mở rộng dataset người Việt, hiệu chỉnh threshold theo từng kịch bản, thêm cơ chế chọn nhiều khuôn mặt trong ảnh, "
+        "tối ưu tốc độ truy vấn bằng FAISS/ANN khi dữ liệu lớn, bổ sung kiểm thử bias/fairness và tăng cường bảo vệ quyền riêng tư."
+        "</div>",
+        unsafe_allow_html=True
+    )
+
+    st.markdown("#### 8. Gợi ý lời trình bày khi demo")
+    st.markdown(
+        "- Đầu tiên giới thiệu bài toán: từ một ảnh truy vấn, hệ thống tìm các khuôn mặt tương đồng nhất trong dataset.\n"
+        "- Sau đó giải thích pipeline: MTCNN phát hiện và căn chỉnh mặt, FaceNet sinh embedding, cosine similarity xếp hạng Top-K.\n"
+        "- Khi demo upload ảnh, chỉ vào điểm similarity và nói rõ điểm càng cao thì vector khuôn mặt càng gần nhau.\n"
+        "- Mở tab **Kết quả & Biểu đồ** để trình bày AUC/EER, ROC, PCA/t-SNE và ý nghĩa của các biểu đồ.\n"
+        "- Kết thúc bằng ứng dụng thực tế: tìm kiếm ảnh, gợi ý hồ sơ trong app hẹn hò, quản lý sự kiện, kho media, kiểm tra trùng lặp hồ sơ."
+    )
+
