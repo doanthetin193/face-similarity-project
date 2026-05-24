@@ -35,6 +35,8 @@ from src.utils import load_embeddings, save_figure, RESULTS_DIR, align_and_crop_
 # ──────────────────────────────────────────────────────
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 IMAGE_SIZE = 160
+MATCH_THRESH = 0.70
+SIMILAR_THRESH = 0.60
 
 
 def load_models(device: str):
@@ -124,7 +126,7 @@ def plot_result(face_pil: Image.Image,
         color = cmap(score)  # màu theo similarity score
         ax.set_title(
             f"#{i+1} {label.split()[-1]}\nsim={score:.3f}",
-            fontsize=8, color="darkgreen" if score > 0.7 else "darkorange"
+            fontsize=8, color="darkgreen" if score >= MATCH_THRESH else "darkorange"
         )
         ax.axis("off")
         for spine in ax.spines.values():
@@ -195,17 +197,17 @@ def main():
     print(f"{'─'*50}")
     for i, (score, label) in enumerate(zip(top_scores, top_labels), 1):
         bar = "█" * int(score * 20)
-        tag = "✓ Khá giống" if score > 0.75 else ("~ Tương đồng" if score > 0.6 else "✗ Ít giống")
+        tag = "✓ Rất giống" if score >= MATCH_THRESH else ("~ Khá giống" if score >= SIMILAR_THRESH else "✗ Ít giống")
         print(f"  #{i}  {label:<32s}  sim={score:.4f}  {bar}  {tag}")
     print(f"{'─'*50}")
 
     # Giải thích score
     top1_score = top_scores[0]
-    if top1_score > 0.8:
+    if top1_score >= 0.8:
         verdict = "Kết quả rất tốt — khuôn mặt có cấu trúc tương đồng cao"
-    elif top1_score > 0.7:
+    elif top1_score >= MATCH_THRESH:
         verdict = "Kết quả tốt — tìm thấy người có nét tương đồng"
-    elif top1_score > 0.6:
+    elif top1_score >= SIMILAR_THRESH:
         verdict = "Tương đồng vừa — một số đặc trưng khuôn mặt gần nhau"
     else:
         verdict = "Ít tương đồng — khuôn mặt khá độc đáo so với dataset hiện tại"

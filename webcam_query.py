@@ -37,6 +37,8 @@ DEVICE      = "cuda" if torch.cuda.is_available() else "cpu"
 IMAGE_SIZE  = 160
 FRAME_SKIP  = 4        # Chi embed moi N frame (tang FPS)
 CONF_THRESH = 0.85     # Chi xu ly mat co confidence >= nguong nay
+MATCH_THRESH = 0.70    # Dong bo voi SAME_PERSON_THRESH trong src/03_retrieval.py
+SIMILAR_THRESH = 0.60  # Muc dien giai mem cho webcam/UI
 BOX_COLOR_MATCH   = (0, 220, 80)    # Xanh la -- tim thay (BGR)
 BOX_COLOR_SEARCH  = (0, 165, 255)   # Cam -- dang xu ly
 BOX_COLOR_NONE    = (80, 80, 80)    # Xam -- khong co mat
@@ -144,8 +146,8 @@ def draw_sidebar(frame, top_labels, top_scores, top_k, top_imgs=None):
         for i, (lbl, sc) in enumerate(zip(top_labels, top_scores)):
             y0 = 52 + i * ROW_H
 
-            rank_color = (100, 220, 100) if sc > 0.65 else \
-                         (100, 180, 255) if sc > 0.50 else (150, 150, 150)
+            rank_color = (100, 220, 100) if sc >= MATCH_THRESH else \
+                         (100, 180, 255) if sc >= SIMILAR_THRESH else (150, 150, 150)
 
             # ── Thumbnail ─────────────────────────────────
             if top_imgs is not None:
@@ -172,7 +174,7 @@ def draw_sidebar(frame, top_labels, top_scores, top_k, top_imgs=None):
 
             # Score text
             score_txt = f"sim = {sc:.3f}"
-            tag = "Match" if sc > 0.65 else ("Similar" if sc > 0.50 else "Low")
+            tag = "Match" if sc >= MATCH_THRESH else ("Similar" if sc >= SIMILAR_THRESH else "Low")
             cv2.putText(panel, f"{score_txt}  [{tag}]", (tx, y0 + 50),
                         FONT, 0.38, rank_color, 1, cv2.LINE_AA)
 

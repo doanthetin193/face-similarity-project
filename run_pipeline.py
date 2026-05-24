@@ -1,19 +1,23 @@
 """
 run_pipeline.py — Chạy toàn bộ pipeline LFW từ đầu đến cuối (1 lệnh)
 
+CANH BAO:
+    File nay chi danh cho LFW. Neu chay file nay, src/02_embed.py se ghi de
+    embeddings/*.npy hien tai. Voi custom dataset, dung run_custom_pipeline.py.
+
 Sử dụng:
     python run_pipeline.py                  # Chạy pipeline LFW đầy đủ
 
 Nếu dùng custom dataset (Vietnamese Celebrity...):
-    python src/02b_embed_custom.py          # Embed custom_dataset/
-    python src/03_retrieval.py              # Rồi chạy các bước còn lại
+    python run_custom_pipeline.py           # Da co embeddings, chi chay 03/04/05
+    python run_custom_pipeline.py --with-embed  # Co y embed lai custom_dataset/
 
 Đưa ảnh từ ngoài vào query:
     python query_external.py "anh.jpg"      # Tìm người giống nhất
 
 Thứ tự pipeline LFW:
     1. Preprocess  → xem dataset, lưu biểu đồ
-    2. Embed       → MTCNN + FaceNet → embeddings.npy (~2 phút)
+    2. Embed       → resize/normalize LFW crop + FaceNet → embeddings.npy
     3. Retrieval   → Top-K search + đánh giá threshold
     4. Cluster     → Elbow + KMeans + Silhouette
     5. Visualize   → PCA + t-SNE + Heatmap
@@ -55,7 +59,9 @@ def run_step(name: str, script: str):
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("  FACE SIMILARITY RETRIEVAL SYSTEM — FULL PIPELINE")
+    print("  FACE SIMILARITY RETRIEVAL SYSTEM — LFW AUXILIARY PIPELINE")
+    print("  WARNING: This can overwrite current custom embeddings.")
+    print("  For custom dataset, use: python run_custom_pipeline.py")
     print("=" * 60)
 
     total_t0 = time.time()

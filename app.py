@@ -153,12 +153,14 @@ def find_top_k(query_emb, db_embs, db_labels, db_imgs, k):
 
 
 EER_THRESHOLD = 0.4968
+SAME_PERSON_UI_THRESHOLD = 0.70
+SIMILAR_UI_THRESHOLD = 0.60
 
 
 def sim_color_class(score):
-    if score >= 0.75:
+    if score >= SAME_PERSON_UI_THRESHOLD:
         return "sim-high", "Rất giống"
-    if score >= 0.60:
+    if score >= SIMILAR_UI_THRESHOLD:
         return "sim-medium", "Khá giống"
     if score >= EER_THRESHOLD:
         return "sim-uncertain", "Có tương đồng"
@@ -167,10 +169,10 @@ def sim_color_class(score):
 
 def sim_explanation(score):
     css_cls, label = sim_color_class(score)
-    if score >= 0.75:
-        detail = "Mức tương đồng cao, có thể xem là ứng viên rất mạnh trong Top-K."
-    elif score >= 0.60:
-        detail = "Mức tương đồng khá tốt, nên đối chiếu thêm ảnh gốc khi báo cáo/demo."
+    if score >= SAME_PERSON_UI_THRESHOLD:
+        detail = "Mức tương đồng cao, vượt ngưỡng đánh giá 0.70 nên có thể xem là ứng viên rất mạnh trong Top-K."
+    elif score >= SIMILAR_UI_THRESHOLD:
+        detail = "Mức tương đồng khá tốt nhưng chưa vượt ngưỡng đánh giá 0.70, nên đối chiếu thêm ảnh gốc khi báo cáo/demo."
     elif score >= EER_THRESHOLD:
         detail = "Điểm vượt ngưỡng EER nhưng chưa cao, hệ thống xem là có dấu hiệu tương đồng."
     else:
@@ -364,7 +366,7 @@ with tab1:
                 fig.patch.set_facecolor("#1a1f2e")
                 ax.set_facecolor("#1a1f2e")
                 colors = [
-                    "#4ade80" if s >= 0.75 else "#60a5fa" if s >= 0.60 else "#fbbf24" if s >= EER_THRESHOLD else "#facc15"
+                    "#4ade80" if s >= SAME_PERSON_UI_THRESHOLD else "#60a5fa" if s >= SIMILAR_UI_THRESHOLD else "#fbbf24" if s >= EER_THRESHOLD else "#facc15"
                     for s in top_scores
                 ]
                 short_labels = [l[:18] + ".." if len(l) > 18 else l for l in top_labels]
@@ -375,8 +377,8 @@ with tab1:
                 ax.set_xlim(0, 1)
                 ax.set_xlabel("Cosine Similarity", color="#8b92a5")
                 ax.tick_params(colors="#8b92a5")
-                ax.axvline(0.75, color="#4ade80", lw=1, ls="--", alpha=0.5, label="Rất giống >=0.75")
-                ax.axvline(0.60, color="#60a5fa", lw=1, ls="--", alpha=0.5, label="Khá giống >=0.60")
+                ax.axvline(SAME_PERSON_UI_THRESHOLD, color="#4ade80", lw=1, ls="--", alpha=0.5, label="Rất giống / same >=0.70")
+                ax.axvline(SIMILAR_UI_THRESHOLD, color="#60a5fa", lw=1, ls="--", alpha=0.5, label="Khá giống >=0.60")
                 ax.axvline(EER_THRESHOLD, color="#fbbf24", lw=1, ls="--", alpha=0.5, label=f"EER {EER_THRESHOLD:.4f}")
                 for spine in ax.spines.values():
                     spine.set_edgecolor("#2a2d3e")
@@ -751,7 +753,7 @@ with tab5:
         f"<div class='explain-box'>"
         f"<b>Cosine similarity</b> nằm trong khoảng so sánh độ gần giữa hai vector embedding. "
         f"Trong demo này, hệ thống dùng ngưỡng tham chiếu EER = <b>{EER_THRESHOLD:.4f}</b>. "
-        f"Các mức diễn giải trên giao diện gồm: <b>rất giống</b> khi >= 0.75, "
+        f"Các mức diễn giải trên giao diện gồm: <b>rất giống/dự đoán cùng người</b> khi >= 0.70, "
         f"<b>khá giống</b> khi >= 0.60, <b>có tương đồng</b> khi vượt ngưỡng EER, "
         f"và <b>không chắc chắn</b> khi thấp hơn ngưỡng EER."
         f"</div>",

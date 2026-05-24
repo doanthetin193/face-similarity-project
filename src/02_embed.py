@@ -3,13 +3,13 @@
 
 Quy trình:
   1. Load ảnh từ LFW dataset
-  2. Dùng MTCNN để detect & crop khuôn mặt (160×160)
+  2. LFW đã là face crop nên resize/normalize trực tiếp về 160x160
   3. Dùng InceptionResnetV1 (pretrained VGGFace2) để trích 512-dim embedding
   4. Lưu embeddings.npy + labels.npy + images.npy
 
 Ghi chú:
-  - MTCNN = Multi-task Cascaded Convolutional Networks (detect + align)
-  - InceptionResnetV1 = FaceNet backbone, pretrained on VGGFace2 (3.31M identities)
+  - File này KHÔNG dùng MTCNN; MTCNN nằm ở luồng custom/query ngoài.
+  - InceptionResnetV1 = FaceNet backbone, pretrained on VGGFace2 (3.31M images, 9,131 identities)
   - Embedding 512D: mặt giống nhau → vector gần nhau trong không gian 512D
 """
 
@@ -36,7 +36,7 @@ MIN_FACES = 20
 def build_resnet(device: str) -> InceptionResnetV1:
     """Khoi tao FaceNet (InceptionResnetV1 pretrained VGGFace2)."""
     resnet = InceptionResnetV1(
-        pretrained="vggface2",   # Pretrained tren VGGFace2 (3.31M identities)
+        pretrained="vggface2",   # Pretrained tren VGGFace2 (3.31M images, 9,131 identities)
         classify=False,          # Lay embedding, khong classify
     ).eval().to(device)
     print(f"[OK] FaceNet san sang — Device: {device.upper()}")

@@ -1,189 +1,338 @@
-# 🧠 Face Similarity Retrieval System
+# Face Similarity Retrieval System
 
-> **Môn học:** Lập trình Trí tuệ Nhân tạo  
-> **Mức độ AI:** Pretrained model local — Representation Learning + Metric Learning + Unsupervised Clustering
-
----
-
-## Giới thiệu
-
-Hệ thống truy hồi khuôn mặt tương đồng sử dụng mô hình học sâu FaceNet (InceptionResnetV1 pretrained VGGFace2) để biến mỗi khuôn mặt thành một vector 512 chiều (embedding), sau đó xây dựng hệ thống:
-
-- **Top-K Retrieval** — Nhập 1 ảnh → trả về K ảnh giống nhất (cosine similarity)
-- **External Query** — Đưa ảnh bất kỳ từ ngoài vào, tìm người giống nhất trong dataset
-- **Clustering** — Phân nhóm tự động không cần nhãn (KMeans)
-- **Visualization** — PCA + t-SNE để khám phá cấu trúc không gian embedding
+> **Mon hoc:** Lap trinh Tri tue Nhan tao
+> **Bai toan:** Truy hoi khuon mat tuong dong bang deep learning
+> **Trang thai hien tai:** Custom dataset nguoi Viet la luong chinh; LFW chi con la luong phu de test nhanh.
 
 ---
 
-## Cài đặt
+## 1. Gioi thieu
 
-```bash
-# 1. Tạo môi trường ảo
+Project xay dung he thong tim kiem khuon mat tuong dong. Nguoi dung dua vao mot anh khuon mat tu bat ky nguon nao nhu upload web, anh test ngoai hoac webcam. He thong se trich xuat embedding 512 chieu bang FaceNet/InceptionResnetV1 pretrained tren VGGFace2, sau do so sanh voi database embedding bang Cosine Similarity va tra ve Top-K khuon mat giong nhat.
+
+Pipeline chinh:
+
+```text
+Anh dau vao
+-> MTCNN detect khuon mat + 5 landmarks
+-> Face Alignment bang hai mat
+-> Crop/resize/normalize ve 160x160
+-> FaceNet/InceptionResnetV1 pretrained VGGFace2
+-> Embedding 512D
+-> Cosine Similarity
+-> Top-K khuon mat tuong dong
+```
+
+Chuc nang chinh:
+
+- Embed custom dataset nguoi Viet trong `custom_dataset/`.
+- Truy hoi Top-K bang Cosine Similarity.
+- Query anh ngoai bang CLI qua `query_external.py`.
+- Giao dien Web Streamlit qua `app.py`.
+- Webcam realtime qua `webcam_query.py`.
+- Danh gia ROC/AUC/EER trong `src/03_retrieval.py`.
+- Phan cum KMeans trong `src/04_cluster.py`.
+- Truc quan hoa PCA, t-SNE va heatmap trong `src/05_visualize.py`.
+
+---
+
+## 2. Ket qua moi nhat
+
+Sau khi cap nhat Face Alignment va embed lai custom dataset:
+
+| Hang muc | Gia tri |
+|---|---:|
+| Tong file anh trong `custom_dataset/` | 31,662 |
+| Anh embed thanh cong | 31,480 |
+| Anh bo qua do khong detect duoc mat | 182 |
+| So nhan/identity | 1,244 |
+| Embedding shape | `(31480, 512)` |
+| Labels shape | `(31480,)` |
+| Images shape | `(31480, 62, 62, 3)` |
+| AUC | 0.9914 |
+| EER | 0.0518 |
+| Threshold tai EER | 0.4968 |
+| KMeans tot nhat trong range 3-15 | k = 3 |
+| Silhouette tai k=3 | 0.0837 |
+| PCA 2D explained variance | 19.1% |
+| PCA components dat 90% variance | 36 |
+| PCA components dat 95% variance | 41 |
+
+Ghi chu ve "nhan/identity": moi thu muc nguoi/ID trong dataset duoc xem la mot nhan. Vi du `VN-celeb/558/` la mot nhan, `Ca si/Hoang Thuy Linh/` la mot nhan. Mot nhan co the co nhieu anh cua cung mot nguoi/ID.
+
+---
+
+## 3. Cai dat
+
+```powershell
+cd D:\AP\face_similarity_project
+
 python -m venv .venv
-.venv\Scripts\activate      # Windows
-# source .venv/bin/activate # Linux/Mac
+.venv\Scripts\activate
 
-# 2. Cài thư viện
 pip install -r requirements.txt
 ```
 
+Thu vien chinh:
+
+- `facenet-pytorch`: MTCNN va InceptionResnetV1.
+- `torch`, `torchvision`: backend deep learning.
+- `scikit-learn`: LFW loader, cosine similarity, ROC/AUC, KMeans, PCA, t-SNE.
+- `numpy`: xu ly embedding va file `.npy`.
+- `Pillow`: doc anh, convert RGB, rotate alignment.
+- `opencv-python`: webcam realtime.
+- `matplotlib`: ve bieu do.
+- `streamlit`: Web UI.
+- `tqdm`: progress bar khi embed.
+
 ---
 
-## Dataset
+## 4. Dataset
 
-Project hỗ trợ **2 chế độ dataset**:
+### 4.1. Custom dataset nguoi Viet
 
-### Chế độ A — LFW (mặc định, tự động tải)
+Day la luong chinh cua project. Thu muc du lieu:
 
-| | |
-|---|---|
-| **Tên** | LFW (Labeled Faces in the Wild) |
-| **Ảnh** | ~3.023 ảnh (người có ≥ 20 ảnh) |
-| **Người** | 62 người nổi tiếng phương Tây |
-| **Tải** | Tự động qua `scikit-learn` — không cần chuẩn bị gì |
-
-### Chế độ B — Custom Dataset (ảnh tự chuẩn bị)
-
-Cấu trúc thư mục:
-```
+```text
 custom_dataset/
-├── Category_1/
-│   ├── Nguyen_Van_A/
-│   │   ├── anh1.jpg
-│   │   └── ...
-│   └── Tran_Thi_B/
-└── Category_2/
-    └── ...
+|-- Category/
+|   |-- Person_A/
+|   |   |-- image1.jpg
+|   |   `-- image2.jpg
+|   `-- Person_B/
+`-- VN-celeb/
+    |-- 1/
+    |-- 2/
+    `-- ...
 ```
-> **Dataset đã tích hợp sẵn:**  
-> - **Vietnamese Celebrity Faces** (Kaggle) — 8.557 ảnh, 224 người (ca sĩ/diễn viên/hoa hậu VN)  
-> - **VN-Celeb** (Kaggle) — 23.105 ảnh, 1.020 người (ID số, không có tên)  
-> - **Tổng cộng:** ~31.480 ảnh, 1.244 người sau khi embed (bỏ qua 182 ảnh không detect được mặt)
 
-### Link tải dataset (Kaggle)
+`src/02b_embed_custom.py` scan cac file anh co duoi:
 
-- VN-Celeb: https://www.kaggle.com/datasets/dnguyenhoang/vn-celeb
-- Vietnamese Celebrity Faces: tìm theo từ khóa `Vietnamese Celebrity Faces` trên Kaggle (link có thể thay đổi theo tài khoản đăng tải)
+```text
+.jpg, .jpeg, .png, .bmp, .webp
+```
+
+Thong ke custom dataset hien tai:
+
+- Tong file anh: 31,662.
+- Anh embed thanh cong: 31,480.
+- Anh bi bo qua: 182.
+- So nhan/identity: 1,244.
+- Vietnamese Celebrity Faces: 8,557 anh, 224 nguoi.
+- VN-Celeb: 23,105 anh, 1,020 ID.
+
+### 4.2. LFW dataset
+
+LFW la luong phu de test nhanh pipeline hoc thuat:
+
+- Tai qua `sklearn.datasets.fetch_lfw_people`.
+- Cau hinh `min_faces_per_person=20`.
+- So anh cache hien tai: 3,023.
+- So nguoi: 62.
+- Anh LFW da crop san, nen `src/02_embed.py` resize truc tiep ve 160x160 va dua vao FaceNet, khong dung MTCNN.
+
+> Luu y: `run_pipeline.py` chay luong LFW va co the ghi de `embeddings/*.npy`. Voi custom dataset, nen dung `run_custom_pipeline.py`.
 
 ---
 
-## Chạy Pipeline
+## 5. Chay pipeline custom dataset
 
-### Chế độ A — LFW Dataset
+### 5.1. Da co embeddings, chi chay tiep phan tich
 
-```bash
-# Bước 1 — Xem thống kê & ảnh mẫu
-python src/01_preprocess.py
+Lenh an toan sau khi da embed custom dataset:
 
-# Bước 2 — Trích embedding LFW (AI core) — ~2 phút
-python src/02_embed.py
+```powershell
+python run_custom_pipeline.py
 ```
 
-### Chế độ B — Custom Dataset
+Lenh nay khong chay lai `src/02b_embed_custom.py`, nen khong ghi de embedding custom hien tai. Cac buoc duoc chay:
 
-```bash
-# Bước 2B — Trích embedding từ custom_dataset/ — ~8-10 phút
-python src/02b_embed_custom.py
-```
-
-### Phần còn lại — dùng chung cho cả 2 chế độ
-
-```bash
-# Bước 3A — Top-K Retrieval (so sánh nội bộ dataset)
+```powershell
 python src/03_retrieval.py
-
-# Bước 3B — Clustering (Elbow + KMeans + Silhouette)
 python src/04_cluster.py
-
-# Bước 4 — Visualization (PCA + t-SNE + Heatmap)
 python src/05_visualize.py
+```
 
-# Hoặc chạy toàn bộ 1 lệnh (chế độ LFW)
+### 5.2. Co y embed lai toan bo custom dataset
+
+Chi dung khi da them/sua du lieu hoac thay doi tien xu ly:
+
+```powershell
+python run_custom_pipeline.py --with-embed
+```
+
+Lenh nay se chay:
+
+```powershell
+python src/02b_embed_custom.py
+python src/03_retrieval.py
+python src/04_cluster.py
+python src/05_visualize.py
+```
+
+`src/02b_embed_custom.py` ton thoi gian vi phai detect/align/crop/embed toan bo anh. Khi embed lai, `save_embeddings()` tu xoa `embeddings/cluster_labels.npy` cu neu co de tranh lech so dong voi embedding moi.
+
+---
+
+## 6. Chay LFW pipeline phu
+
+```powershell
 python run_pipeline.py
 ```
 
-### Đưa ảnh từ ngoài vào query
+Hoac chay tung buoc:
 
-```bash
-# Tìm người giống nhất trong dataset với ảnh bất kỳ
-python query_external.py "đường/dẫn/ảnh.jpg"
-python query_external.py "anh.jpg" --topk 8
+```powershell
+python src/01_preprocess.py
+python src/02_embed.py
+python src/03_retrieval.py
+python src/04_cluster.py
+python src/05_visualize.py
 ```
 
-> Kết quả tự động mở lên và lưu vào `results/query_external_result.png`
+`run_pipeline.py` chi phu hop voi LFW/test nhanh. Neu dang bao ve ket qua custom dataset, khong nen chay lenh nay vi no co the ghi de embedding custom.
 
 ---
 
-## Kiến trúc Pipeline
+## 7. Demo san pham
 
-```
-custom_dataset/ (ảnh thô)      LFW (đã crop sẵn)
-    ↓ MTCNN detect & crop          ↓ Resize 160×160
-    └──────────────────────────────┘
-    ↓ InceptionResnetV1 (FaceNet pretrained VGGFace2)
-    → Embedding 512-dim  →  lưu embeddings.npy
-         ├─ Cosine Similarity → Top-K Retrieval (nội bộ)
-         ├─ Cosine Similarity → External Query (ảnh ngoài)
-         ├─ KMeans → Clustering
-         └─ PCA / t-SNE → 2D Visualization
+### 7.1. Streamlit Web UI
+
+```powershell
+streamlit run app.py
 ```
 
----
+Mo trinh duyet:
 
-## Kết quả đầu ra
+```text
+http://localhost:8501
+```
 
-| File | Mô tả |
+Web UI gom cac tab:
+
+| Tab | Chuc nang |
 |---|---|
-| `results/01_sample_faces.png` | Lưới ảnh mẫu dataset |
-| `results/01_class_distribution.png` | Biểu đồ phân phối số ảnh |
-| `results/03_retrieval_query*.png` | Kết quả Top-K retrieval nội bộ |
-| `results/03_similarity_distribution.png` | Phân phối cosine similarity |
-| `results/03_roc_curve.png` | **ROC Curve + AUC + EER** |
-| `results/04_elbow_silhouette.png` | Elbow Method + Silhouette |
-| `results/04_cluster_samples_k*.png` | Ảnh mẫu mỗi cụm KMeans |
-| `results/05_pca_*.png` | PCA 2D scatter |
-| `results/05_tsne_*.png` | t-SNE 2D scatter |
-| `results/05_similarity_heatmap.png` | Heatmap cosine similarity |
-| `results/05_pca_variance.png` | PCA explained variance |
-| `results/query_external_result.png` | Kết quả query ảnh từ ngoài |
+| Query Upload | Upload anh, detect/align/embed, hien thi Top-K |
+| Dataset Info | Thong ke dataset va anh mau |
+| Ket qua & Bieu do | Xem ROC, PCA, t-SNE, heatmap, retrieval |
+| Clustering | Xem Elbow, Silhouette, anh mau cum |
+| Pipeline & Giai thich | Giai thich pipeline va y nghia ket qua |
 
----
+Nguong hien thi similarity trong UI:
 
-## Thư viện sử dụng
-
-| Thư viện | Vai trò |
+| Khoang score | Dien giai |
 |---|---|
-| `facenet-pytorch` | MTCNN (face detection) + FaceNet (embedding) |
-| `torch` / `torchvision` | Deep Learning backend |
-| `scikit-learn` | KMeans, PCA, t-SNE, LFW loader |
-| `numpy` | Xử lý vector / matrix |
-| `matplotlib` / `seaborn` | Visualize |
-| `Pillow` | Xử lý ảnh đầu vào |
+| `score >= 0.70` | Rat giong / du doan cung nguoi |
+| `0.60 <= score < 0.70` | Kha giong, ung vien tuong dong trong Top-K |
+| `0.4968 <= score < 0.60` | Co tuong dong nhe theo nguong EER |
+| `score < 0.4968` | Khong chac chan |
+
+`0.70` duoc dong bo voi `SAME_PERSON_THRESH` trong `src/03_retrieval.py`. `0.4968` la threshold tai EER tu ket qua thuc nghiem moi nhat.
+
+### 7.2. Query anh ngoai bang CLI
+
+```powershell
+python query_external.py "duong_dan_anh.jpg"
+python query_external.py "duong_dan_anh.jpg" --topk 8
+```
+
+Ket qua duoc luu sau khi chay lenh:
+
+```text
+results/query_external_result.png
+```
+
+### 7.3. Webcam realtime
+
+```powershell
+python webcam_query.py
+python webcam_query.py --topk 5
+python webcam_query.py --camera 1
+```
+
+Cau hinh chinh:
+
+- `FRAME_SKIP = 4`: chi embed moi 4 frame de tang FPS.
+- `CONF_THRESH = 0.85`: chi xu ly mat co confidence tu 0.85 tro len.
+- `MATCH_THRESH = 0.70`: nguong Match.
+- `SIMILAR_THRESH = 0.60`: nguong Similar.
+
+Phim tat:
+
+| Phim | Chuc nang |
+|---|---|
+| `Q` / `ESC` | Thoat |
+| `S` | Chup snapshot vao `results/webcam_snapshot.png` |
+| `SPACE` | Tam dung / tiep tuc |
 
 ---
 
-## Cấu trúc thư mục
+## 8. Cau truc project
 
-```
+```text
 face_similarity_project/
-├── src/
-│   ├── utils.py               # Tiện ích chung (path, save/load)
-│   ├── 01_preprocess.py       # Load & thống kê LFW dataset
-│   ├── 02_embed.py            # Embed LFW (AI core)
-│   ├── 02b_embed_custom.py    # Embed custom dataset (Vietnamese Celebrity...)
-│   ├── 03_retrieval.py        # Top-K similarity search nội bộ
-│   ├── 04_cluster.py          # KMeans clustering
-│   └── 05_visualize.py        # PCA + t-SNE + heatmap
-├── app.py                     # Streamlit Web UI (4 tab)
-├── webcam_query.py            # Webcam real-time query
-├── query_external.py          # Query ảnh từ ngoài vào dataset (CLI)
-├── run_pipeline.py            # Chạy toàn bộ pipeline LFW 1 lệnh
-├── docs/                      # Tài liệu kỹ thuật chi tiết
-├── custom_dataset/            # Dataset tự chuẩn bị (không push lên git)
-├── images/                    # Ảnh test cho query_external
-├── embeddings/                # embeddings.npy, labels.npy (auto-generated)
-├── results/                   # Hình ảnh kết quả (auto-generated)
-├── requirements.txt
-└── README.md
+|-- src/
+|   |-- utils.py               # Path, save/load, face alignment
+|   |-- 01_preprocess.py       # Load/thong ke LFW
+|   |-- 02_embed.py            # Embed LFW
+|   |-- 02b_embed_custom.py    # Embed custom dataset nguoi Viet
+|   |-- 03_retrieval.py        # Top-K, similarity distribution, ROC/AUC/EER
+|   |-- 04_cluster.py          # KMeans, Elbow, Silhouette
+|   `-- 05_visualize.py        # PCA, t-SNE, heatmap
+|-- app.py                     # Streamlit Web UI
+|-- query_external.py          # Query anh ngoai bang CLI
+|-- webcam_query.py            # Webcam realtime
+|-- run_custom_pipeline.py     # Pipeline custom an toan, mac dinh bo qua embed
+|-- run_pipeline.py            # Pipeline LFW phu
+|-- custom_dataset/            # Dataset nguoi Viet
+|-- embeddings/                # embeddings.npy, labels.npy, images.npy, cluster_labels.npy
+|-- results/                   # Hinh ket qua pipeline
+|-- docs/
+|-- requirements.txt
+`-- README.md
 ```
+
+---
+
+## 9. File ket qua quan trong
+
+| File | Y nghia |
+|---|---|
+| `embeddings/embeddings.npy` | Embedding 512D cua database |
+| `embeddings/labels.npy` | Nhan/identity tuong ung moi embedding |
+| `embeddings/images.npy` | Thumbnail 62x62 de hien thi, khong phai tensor FaceNet |
+| `embeddings/cluster_labels.npy` | Nhan cum KMeans moi nhat |
+| `results/03_retrieval_query*.png` | Top-K retrieval mau |
+| `results/03_similarity_distribution.png` | Phan phoi similarity |
+| `results/03_roc_curve.png` | ROC Curve, AUC, EER |
+| `results/04_elbow_silhouette.png` | Elbow + Silhouette |
+| `results/04_cluster_samples_k3.png` | Anh mau cum KMeans |
+| `results/05_pca_*.png` | PCA visualization |
+| `results/05_tsne_*.png` | t-SNE visualization |
+| `results/05_similarity_heatmap.png` | Heatmap similarity |
+| `results/webcam_snapshot.png` | Anh minh chung webcam neu da chup snapshot |
+| `results/query_external_result.png` | Anh minh chung CLI sau khi chay `query_external.py` |
+
+---
+
+## 10. Ghi chu ky thuat
+
+- Custom dataset nen chay bang `run_custom_pipeline.py`, khong chay `run_pipeline.py`.
+- `run_custom_pipeline.py` mac dinh bo qua embed va chi chay `03_retrieval.py`, `04_cluster.py`, `05_visualize.py`.
+- Chi dung `python run_custom_pipeline.py --with-embed` khi that su muon embed lai toan bo custom dataset.
+- Neu sua tien xu ly nhu Face Alignment thi phai embed lai de embedding phan anh code moi.
+- Neu embed lai, phai chay lai retrieval, clustering va visualization.
+- `cluster_labels.npy` phai co cung so dong voi `embeddings.npy`.
+- Threshold `0.70` la nguong tham chieu de du doan cung nguoi trong code danh gia va UI.
+- Threshold tai EER la `0.4968`, dung de tham khao diem can bang FPR/FNR tren mau ROC.
+- KMeans co Silhouette thap vi dang ep hon 1,200 identity vao vai cum lon, khong co nghia la retrieval kem.
+- Bai toan chinh cua project la Top-K face similarity retrieval, khong phai face verification tuyet doi.
+
+---
+
+## 11. Tai lieu lien quan
+
+- `BAO_CAO_BTL.md`: bao cao chinh.
+- `PHAN_CONG_NHIEM_VU.md`: phan cong va on tap bao ve.
+- `TECHNICAL_GUIDE.md`: giai thich ky thuat.
+- `docs/TAI_LIEU_TONG_THE_PIPELINE_CHI_TIET.md`: tai lieu pipeline chi tiet.
